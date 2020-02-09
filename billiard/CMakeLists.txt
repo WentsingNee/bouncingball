@@ -1,0 +1,5 @@
+set(EXECUTABLE_NAME billiard)
+add_executable(${EXECUTABLE_NAME} ./main.cpp)
+target_link_libraries(${EXECUTABLE_NAME} nana)
+target_link_libraries(${EXECUTABLE_NAME} Xcursor)
+target_link_libraries(${EXECUTABLE_NAME} pthread)

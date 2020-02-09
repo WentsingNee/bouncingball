@@ -5,50 +5,24 @@
 #include <random>
 #include <iostream>
 
-#include "draw_ellipse.hpp"
+#include "Circle.hpp"
 
-nana::form form{nana::API::make_center(1500, 900)};
+std::shared_ptr<nana::form> form;
 nana::point cursor_point;
 std::minstd_rand eg(std::time(nullptr));
 
-template <typename Tp, typename Up>
-nana::basic_point<Tp>
-cast_to_nana_point(const std::complex<Up>& pos)
+struct Ball: Circle
 {
-	return nana::basic_point<Tp>(pos.real(), pos.imag());
-}
-
-struct Ball
-{
-		typedef std::complex<float> Vec;
-
-		static constexpr int MAX_RADIUS = 35;
-
-		Vec position;
 		Vec speed;
-		int radius;
-		nana::color color;
 
-		Ball(Vec pos) : position(pos)
+		Ball(const Vec& position, int radius, const nana::color& color) : Circle(position, radius, color)
 		{
-			{
-				std::uniform_real_distribution<float> dis(-15, 15);
-				speed = {dis(eg), dis(eg)};
-			}
-			{
-				std::uniform_int_distribution<int> dis(12, MAX_RADIUS);
-				radius = dis(eg);
-			}
-			{
-				std::uniform_int_distribution<int> dis(0, 255);
-				color = nana::color(dis(eg), dis(eg), dis(eg));
-			}
 		}
 
 		void collide_with_wall()
 		{
-			float k = 0.95;
-			if (form.size().width - this->position.real() < this->radius) {
+			constexpr const float k = 0.75;
+			if (form->size().width - this->position.real() < this->radius) {
 				if (speed.real() > 0) {
 					speed = {-k * speed.real(), speed.imag()};
 				}
@@ -57,7 +31,7 @@ struct Ball
 					speed = {-k * speed.real(), speed.imag()};
 				}
 			}
-			if (form.size().height - this->position.imag() < this->radius) {
+			if (form->size().height - this->position.imag() < this->radius) {
 				if (speed.imag() > 0) {
 					speed = {speed.real(), -k * speed.imag()};
 				}
@@ -71,68 +45,80 @@ struct Ball
 		void move()
 		{
 			Vec distance = Vec(cursor_point.x, cursor_point.y) - position;
-			Vec acc = distance; {
-				if (std::abs(distance) > 0.1) {
-					acc /= std::abs(distance);
-					float m = std::sin((1.0 - 0.85 * radius / (float) MAX_RADIUS) * M_PI_2);
-					acc *= m;
-				}
-			};
+			Vec acc = distance;
+			if (distance != Vec{0, 0}) {
+				acc /= std::abs(distance);
+				std::cout << acc << std::endl;
+				float m = 0.2;
+				acc *= m;
+			}
 
 			speed += acc;
 			position += speed;
 			this->collide_with_wall();
 		}
-
-		void draw(nana::form& form, nana::paint::graphics & graph)
-		{
-			ellipse(graph, cast_to_nana_point<int>(position), radius, radius, color);
-		}
 };
 
-std::vector<Ball> balls = {
-		Ball{{100, 100}}
-};
+std::vector<Ball> balls;
 
-void draw(nana::form& form, nana::paint::graphics & graph)
+void draw(nana::paint::graphics & graph)
 {
-	for (auto & e : balls) {
-		e.move();
-		e.draw(form, graph);
+	for (const auto & e : balls) {
+		e.draw(graph);
 	}
 }
 
 
 int main()
 {
-	form.bgcolor(nana::color(255, 255, 255));
-	form.events().click([](const nana::arg_click& arg) {
+	form = std::make_shared<nana::form>(nana::API::make_center(1500, 900));
+	form->bgcolor(nana::color(255, 255, 255));
+	form->events().click([](const nana::arg_click& arg) {
 		const nana::point point = arg.mouse_args->pos;
-		balls.push_back(Ball{{point.x, point.y}});
+		std::uniform_int_distribution<int> dis_radius(12, 25);
+		std::uniform_int_distribution<int> dis_color(0, 255);
+		nana::color color = nana::color(dis_color(eg), dis_color(eg), dis_color(eg));
+		balls.emplace_back(Ball::Vec(point.x, point.y), dis_radius(eg), color);
+		{
+			std::uniform_real_distribution<float> dis_speed(-15, 15);
+			balls.back().speed = {dis_speed(eg), dis_speed(eg)};
+		}
 	});
-	form.events().mouse_move([](const nana::arg_mouse& arg) {
+	form->events().mouse_move([](const nana::arg_mouse& arg) {
 		cursor_point = arg.pos;
 	});
-	form.show();
-	nana::drawing dw{form};
+	form->show();
+	nana::drawing dw{*form};
 
-	dw.draw([&](nana::paint::graphics & graph){
-		draw(form, graph);
+	dw.draw([](nana::paint::graphics & graph){
+		draw(graph);
 	});
 
 	std::atomic<bool> loop = true;
-	form.events().destroy([&loop] {
+	form->events().destroy([&loop] {
 		loop = false;
 	});
 	std::thread draw_loop([&loop, &dw] {
 		using namespace std::chrono_literals;
 		while (loop) {
+			auto start = std::chrono::steady_clock::now();
 			dw.update();
-			std::this_thread::sleep_for(10ms);
+			std::this_thread::sleep_until(start + 10ms);
+		}
+	});
+	std::thread move_loop([&loop, &dw] {
+		using namespace std::chrono_literals;
+		while (loop) {
+			auto start = std::chrono::steady_clock::now();
+			for (auto & e : balls) {
+				e.move();
+			}
+			std::this_thread::sleep_until(start + 5ms);
 		}
 	});
 
 	nana::exec();
 	draw_loop.join();
+	move_loop.join();
 	return 0;
 }

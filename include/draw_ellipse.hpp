@@ -16,12 +16,9 @@
 
 inline void ellipse(nana::paint::graphics& graph, const nana::point& point, float a, float b, const nana::color& color)
 {
-	for (int i = -a; i < a; ++i) {
-		for (int j = -b; j < b; ++j) {
-			if ((i / a) * (i / a) + (j / b) * (j / b) <= 1) {
-				graph.set_pixel(point.x + i, point.y + j, color);
-			}
-		}
+	for (int i = -b; i < b; ++i) {
+		int width = (float)(a) * std::sqrt(1 - std::pow(i / b, 2));
+		graph.line({point.x - width, point.y + i}, {point.x + width, point.y + i}, color);
 	}
 }
 

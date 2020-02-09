@@ -5,32 +5,20 @@
 #include <random>
 #include <iostream>
 
-#include "draw_ellipse.hpp"
+#include "Circle.hpp"
 
-nana::form form{nana::API::make_center(1500, 900)};
+
+std::shared_ptr<nana::form> form;
 nana::point cursor_point;
 std::minstd_rand eg(std::time(nullptr));
 
-template <typename Tp, typename Up>
-nana::basic_point<Tp>
-cast_to_nana_point(const std::complex<Up>& pos)
-{
-	return nana::basic_point<Tp>(pos.real(), pos.imag());
-}
 
-struct Ball
+struct Ball: Circle
 {
-		typedef std::complex<float> Vec;
-
-		Vec position;
 		Vec speed;
-		int radius;
-		nana::color color;
 
-		Ball(Vec position, int radius) : position(position), speed(), radius(radius)
+		Ball(const Vec& position, int radius, const nana::color& color) : Circle(position, radius, color)
 		{
-			std::uniform_int_distribution<int> dis(0, 255);
-			color = nana::color(dis(eg), dis(eg), dis(eg));
 		}
 
 		void collide(Ball& ano)
@@ -53,7 +41,7 @@ struct Ball
 		void collide_with_wall()
 		{
 			float k = 0.85;
-			if (form.size().width - this->position.real() < this->radius) {
+			if (form->size().width - this->position.real() < this->radius) {
 				if (speed.real() > 0) {
 					speed = {-k * speed.real(), speed.imag()};
 				}
@@ -62,7 +50,7 @@ struct Ball
 					speed = {-k * speed.real(), speed.imag()};
 				}
 			}
-			if (form.size().height - this->position.imag() < this->radius) {
+			if (form->size().height - this->position.imag() < this->radius) {
 				if (speed.imag() > 0) {
 					speed = {speed.real(), -k * speed.imag()};
 				}
@@ -74,44 +62,10 @@ struct Ball
 		}
 
 		void move();
-
-		void draw(nana::form& form, nana::paint::graphics& graph)
-		{
-			ellipse(graph, cast_to_nana_point<int>(this->position), radius, radius, color);
-		}
 };
 
 
-std::vector<Ball> balls = [] {
-	std::vector<Ball> balls;
-	std::uniform_int_distribution<int> dis_x(0, form.size().width);
-	std::uniform_int_distribution<int> dis_y(0, form.size().height);
-	int i = 0;
-	while (i < 40) {
-		Ball ball(Ball::Vec(dis_x(eg), dis_y(eg)), 30);
-
-		if ((form.size().width - ball.position.real() < ball.radius) || (ball.position.real() < ball.radius)) {
-			continue;
-		}
-		if ((form.size().height - ball.position.imag() < ball.radius) || (ball.position.imag() < ball.radius)) {
-			continue;
-		}
-
-		bool flag = true;
-		for (const auto& ano : balls) {
-			if (std::abs(ball.position - ano.position) < ball.radius + ano.radius) {
-				flag = false;
-				break;
-			}
-		}
-		if (flag) {
-			balls.push_back(ball);
-		}
-
-		++i;
-	}
-	return balls;
-}();
+std::vector<Ball> balls;
 
 void Ball::move()
 {
@@ -136,46 +90,93 @@ void Ball::move()
 }
 
 
-void draw(nana::form& form, nana::paint::graphics& graph)
+void draw(nana::paint::graphics& graph)
 {
-	for (auto& e : balls) {
-		e.move();
-		e.draw(form, graph);
+	for (const auto& e : balls) {
+		e.draw(graph);
 	}
 }
 
 
 int main()
 {
-	form.bgcolor(nana::color(255, 255, 255));
-	form.events().click([](const nana::arg_click& arg) {
+	form = std::make_shared<nana::form>(nana::API::make_center(1500, 900));
+	form->bgcolor(nana::color(255, 255, 255));
+	form->events().click([](const nana::arg_click& arg) {
 		for (auto& e : balls) {
 			e.click();
 		}
 	});
-	form.events().mouse_move([](const nana::arg_mouse& arg) {
+	form->events().mouse_move([](const nana::arg_mouse& arg) {
 		cursor_point = arg.pos;
 	});
-	form.show();
-	nana::drawing dw{form};
 
-	dw.draw([&](nana::paint::graphics& graph) {
-		draw(form, graph);
+	balls = [] {
+		std::vector<Ball> balls;
+		std::uniform_int_distribution<int> dis_x(0, form->size().width);
+		std::uniform_int_distribution<int> dis_y(0, form->size().height);
+		std::uniform_int_distribution<int> dis_color(0, 255);
+		int i = 0;
+		while (i < 40) {
+			nana::color color = nana::color(dis_color(eg), dis_color(eg), dis_color(eg));
+			Ball ball(Ball::Vec(dis_x(eg), dis_y(eg)), 30, color);
+
+			if ((form->size().width - ball.position.real() < ball.radius) || (ball.position.real() < ball.radius)) {
+				continue;
+			}
+			if ((form->size().height - ball.position.imag() < ball.radius) || (ball.position.imag() < ball.radius)) {
+				continue;
+			}
+
+			bool flag = true;
+			for (const auto& ano : balls) {
+				if (std::abs(ball.position - ano.position) < ball.radius + ano.radius) {
+					flag = false;
+					break;
+				}
+			}
+			if (flag) {
+				balls.push_back(ball);
+			}
+
+			++i;
+		}
+		return balls;
+	}();
+
+	form->show();
+
+	nana::drawing dw{*form};
+
+	dw.draw([](nana::paint::graphics& graph) {
+		draw(graph);
 	});
 
 	std::atomic<bool> loop = true;
-	form.events().destroy([&loop] {
+	form->events().destroy([&loop] {
 		loop = false;
 	});
 	std::thread draw_loop([&loop, &dw] {
 		using namespace std::chrono_literals;
 		while (loop) {
+			auto start = std::chrono::steady_clock::now();
 			dw.update();
-			std::this_thread::sleep_for(10ms);
+			std::this_thread::sleep_until(start + 10ms);
+		}
+	});
+	std::thread move_loop([&loop] {
+		using namespace std::chrono_literals;
+		while (loop) {
+			auto start = std::chrono::steady_clock::now();
+			for (auto & e : balls) {
+				e.move();
+			}
+			std::this_thread::sleep_until(start + 10ms);
 		}
 	});
 
 	nana::exec();
 	draw_loop.join();
+	move_loop.join();
 	return 0;
 }
