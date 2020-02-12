@@ -71,7 +71,7 @@ void draw(nana::paint::graphics & graph)
 
 int main()
 {
-	form = std::make_shared<nana::form>(nana::API::make_center(1500, 900));
+	form = std::make_shared<nana::form>(nana::API::make_center(1500, 700));
 	form->bgcolor(nana::color(255, 255, 255));
 	form->events().click([](const nana::arg_click& arg) {
 		const nana::point point = arg.mouse_args->pos;
@@ -103,7 +103,8 @@ int main()
 		while (loop) {
 			auto start = std::chrono::steady_clock::now();
 			dw.update();
-			std::this_thread::sleep_until(start + 10ms);
+			std::this_thread::sleep_for(10ms);
+			//std::this_thread::sleep_until(start + 20ms);
 		}
 	});
 	std::thread move_loop([&loop, &dw] {
@@ -113,7 +114,8 @@ int main()
 			for (auto & e : balls) {
 				e.move();
 			}
-			std::this_thread::sleep_until(start + 5ms);
+			std::this_thread::sleep_for(10ms);
+			//std::this_thread::sleep_until(start + 20ms);
 		}
 	});
 
